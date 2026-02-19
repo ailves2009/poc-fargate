@@ -1,0 +1,13 @@
+.terragrunt-cache
+**/*.tfstate
+.terraform
+.terraform/modules/alb
+**/*.crt
+**/*.key
+**/*.csr
+**/*.pem
+data/
+temp/
+**/eks-deploy
+*-secret.yaml
+!*-sealed-secret.yaml
