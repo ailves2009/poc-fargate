@@ -63,7 +63,7 @@ This project demonstrates a scalable, cloud-native architecture for running cont
 
 ## Architecture
 
-![POC Fargate Architecture Diagram](./images/POC-Fargate.png)
+![POC Fargate Architecture Diagram](./images/POC-fargate.png)
 
 ### ASCII Diagram Reference
 
