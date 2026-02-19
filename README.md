@@ -63,8 +63,11 @@ This project demonstrates a scalable, cloud-native architecture for running cont
 
 ## Architecture
 
-```
 ![POC Fargate Architecture Diagram](./images/POC-Fargate.png)
+
+### ASCII Diagram Reference
+
+```
 ┌─────────────────────────────────────────────────────────────┐
 │                        Internet                              │
 └────────────────────────┬────────────────────────────────────┘
@@ -504,7 +507,13 @@ For issues, questions, or suggestions:
 **Version**: 1.0  
 **Status**: Production-Ready POC
 
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
 ### Dependencies
 
-- [terraform-aws-modules/ecs/aws](https://github.com/terraform-aws-modules/terraform-aws-ecs) - Apache License 2.0
-- [terraform-aws-modules/alb/aws](https://github.com/terraform-aws-modules/terraform-aws-alb) - Apache License 2.0
+This project uses the following open-source modules:
+
+- [terraform-aws-modules/ecs/aws](https://github.com/terraform-aws-modules/terraform-aws-ecs) - Licensed under Apache License 2.0
+- [terraform-aws-modules/alb/aws](https://github.com/terraform-aws-modules/terraform-aws-alb) - Licensed under Apache License 2.0
