@@ -18,7 +18,7 @@ This project demonstrates a scalable, cloud-native architecture for running cont
 ### Core Services
 
 - **ECS Fargate**: Serverless container orchestration
-  - Two services: `poc-ecs-service` and `veera-service`
+  - Two services: `poc-ecs-service` and `poc-ecs-service-rc`
   - Capacity providers: FARGATE (50% base + weight) and FARGATE_SPOT (50% weight)
   - Configurable CPU (256-4096 units) and memory (512-4096 MB)
   - Auto-scaling ready (desired_count configurable)
@@ -51,8 +51,8 @@ This project demonstrates a scalable, cloud-native architecture for running cont
   - SSLv3 cipher suite support
 
 - **Blue/Green Deployments**
-  - Primary target group (`poc-ecs-tg`) for production traffic
-  - Alternate target group (`poc-ecs-tg-alternate`) for blue/green testing
+  - Primary target group (`green-tg`) for production traffic
+  - Alternate target group (`blue-tg`) for blue/green testing
   - Weighted routing rules for gradual traffic shifting
 
 - **IAM Security**
@@ -82,7 +82,7 @@ This project demonstrates a scalable, cloud-native architecture for running cont
           ┌──────────────┼──────────────┐
           ▼              ▼              ▼
    ┌─────────────┐ ┌──────────────┐ ┌────────────┐
-   │ TG: POC-ECS │ │ TG: Alternate │ │ Health CHK │
+   │ TG: POC-ECS │ │ TG:Alternate │ │ Health CHK │
    └──────┬──────┘ └──────┬───────┘ └────────────┘
           │               │
           └───────┬───────┘
@@ -95,7 +95,7 @@ This project demonstrates a scalable, cloud-native architecture for running cont
     ┌─────────┴─────────┐
     ▼                   ▼
 ┌───────────────┐  ┌──────────────┐
-│ poc-ecs-svc   │  │ veera-svc    │
+│ poc-ecs-svc   │  │ poc-svc-rc   │
 │               │  │              │
 │ ┌───────────┐ │  │ ┌──────────┐ │
 │ │ fluent-bit│ │  │ │fluent-bit│ │
@@ -205,7 +205,7 @@ terraform output module_alb_dns_name
 aws ecs list-services --cluster ecs-integrated --region us-east-2
 
 # View logs
-aws logs tail /aws/ecs/veera-service --follow --region us-east-2
+aws logs tail /aws/ecs/poc-ecs-service-rc --follow --region us-east-2
 ```
 
 ## Configuration
@@ -253,11 +253,11 @@ log_retention = 14  # Days (default: 7)
 
 Application logs are streamed to CloudWatch:
 - POC Service: `/aws/ecs/poc-ecs-service/poc-ecs-app`
-- Nginx Service: `/aws/ecs/veera-service`
+- Nginx Service: `/aws/ecs/poc-ecs-service-rc`
 
 View logs:
 ```bash
-aws logs tail /aws/ecs/veera-service --follow
+aws logs tail /aws/ecs/poc-ecs-service-rc --follow
 ```
 
 ### Firehose Integration
@@ -288,11 +288,11 @@ rules = {
       weighted_forward = {
         target_groups = [
           {
-            target_group_key = "poc-ecs-tg"          # Production (100%)
+            target_group_key = "green-tg"          # Production (100%)
             weight = 100
           },
           {
-            target_group_key = "poc-ecs-tg-alternate" # Staging (0%)
+            target_group_key = "blue-tg" # Staging (0%)
             weight = 0
           }
         ]

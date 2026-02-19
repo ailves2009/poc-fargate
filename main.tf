@@ -1,7 +1,7 @@
 # poc-fargate/main.tf
 
 # This file defines an example of using the terraform-aws-ecs module to create a Fargate service with an ALB, 
-# including two services (poc-ecs-service and veera-service) with different container definitions and LB TGs. 
+# including two services (poc-ecs-service and nginx-service) with different container definitions and LB TGs. 
 # It also includes the necessary IAM policies for the tasks to pull from ECR and write to CloudWatch Logs, 
 # as well as a Service Discovery namespace for the services to register with.
 
@@ -167,7 +167,7 @@ module "ecs" {
 
       load_balancer = var.enable_alb ? {
         service = {
-          target_group_arn = module.alb[0].target_groups["poc-ecs-tg"].arn
+          target_group_arn = module.alb[0].target_groups["green-tg"].arn
           container_name   = local.poc_container_name
           container_port   = local.poc_container_port
         }
@@ -190,7 +190,7 @@ module "ecs" {
         }
       }
     }
-    veera-service = {
+    poc-ecs-service-rc = {
       enable_execute_command = true
       cpu                    = var.service_cpu
       memory                 = var.service_memory
@@ -235,7 +235,7 @@ module "ecs" {
           logConfiguration = {
             logDriver = "awslogs"
             options = {
-              "awslogs-group"         = "/aws/ecs/veera-service"
+              "awslogs-group"         = "/aws/ecs/poc-ecs-service-rc"
               "awslogs-region"        = local.region
               "awslogs-stream-prefix" = "${local.app_container_name}"
             }
@@ -278,7 +278,7 @@ module "ecs" {
 
       load_balancer = var.enable_alb ? {
         service = {
-          target_group_arn = module.alb[0].target_groups["poc-ecs-tg-alternate"].arn
+          target_group_arn = module.alb[0].target_groups["blue-tg"].arn
           container_name   = local.app_container_name
           container_port   = local.app_container_port
         }
@@ -391,11 +391,11 @@ module "alb" {
               weighted_forward = {
                 target_groups = [
                   {
-                    target_group_key = "poc-ecs-tg"
+                    target_group_key = "green-tg"
                     weight           = 100
                   },
                   {
-                    target_group_key = "poc-ecs-tg-alternate"
+                    target_group_key = "blue-tg"
                     weight           = 0
                   }
                 ]
@@ -417,7 +417,7 @@ module "alb" {
               weighted_forward = {
                 target_groups = [
                   {
-                    target_group_key = "poc-ecs-tg-alternate"
+                    target_group_key = "blue-tg"
                     weight           = 100
                   }
                 ]
@@ -437,7 +437,7 @@ module "alb" {
   }
 
   target_groups = {
-    poc-ecs-tg = {
+    green-tg = {
       backend_protocol                  = "HTTP"
       backend_port                      = local.poc_container_port
       target_type                       = "ip"
@@ -463,7 +463,7 @@ module "alb" {
     }
 
     # for blue/green deployments
-    poc-ecs-tg-alternate = {
+    blue-tg = {
       backend_protocol = "HTTP"
       # backend_port                      = local.container_port
       backend_port                      = local.app_container_port

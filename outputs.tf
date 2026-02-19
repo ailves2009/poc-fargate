@@ -34,10 +34,10 @@ output "module_alb_security_group_id" {
   value = var.enable_alb ? module.alb[0].security_group_id : ""
 }
 output "module_alb_target_groups_poc_ecs_arn" {
-  value = var.enable_alb ? module.alb[0].target_groups["poc-ecs-tg"].arn : ""
+  value = var.enable_alb ? module.alb[0].target_groups["green-tg"].arn : ""
 }
 output "module_alb_target_groups_poc_ecs_name" {
-  value = var.enable_alb ? module.alb[0].target_groups["poc-ecs-tg"].name : ""
+  value = var.enable_alb ? module.alb[0].target_groups["green-tg"].name : ""
 }
 
 output "infrastructure_iam_role_name" {

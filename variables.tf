@@ -207,5 +207,5 @@ variable "certificate_arn" {
 
 variable "service_names" {
   type    = list(string)
-  default = ["poc-ecs-service", "veera-service"]
+  default = ["poc-ecs-service", "poc-ecs-service-rc"]
 }
