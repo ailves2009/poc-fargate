@@ -2,7 +2,8 @@
 
 # This file defines the AWS resources needed for Kinesis Firehose to deliver logs to S3 and CloudWatch.
 resource "aws_s3_bucket" "firehose" {
-  bucket = "poc-fargate-${replace(substr(data.aws_caller_identity.current.account_id, 0, 6), "/", "")}"
+  bucket        = "poc-fargate-${replace(substr(data.aws_caller_identity.current.account_id, 0, 6), "/", "")}"
+  force_destroy = true
 }
 
 resource "aws_iam_role" "firehose_role" {
