@@ -503,3 +503,8 @@ For issues, questions, or suggestions:
 **Last Updated**: February 2026  
 **Version**: 1.0  
 **Status**: Production-Ready POC
+
+### Dependencies
+
+- [terraform-aws-modules/ecs/aws](https://github.com/terraform-aws-modules/terraform-aws-ecs) - Apache License 2.0
+- [terraform-aws-modules/alb/aws](https://github.com/terraform-aws-modules/terraform-aws-alb) - Apache License 2.0
