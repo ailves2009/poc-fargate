@@ -11,3 +11,4 @@ temp/
 **/eks-deploy
 *-secret.yaml
 !*-sealed-secret.yaml
+inputs.tfvars
