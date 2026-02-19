@@ -1,5 +1,6 @@
 .terragrunt-cache
 **/*.tfstate
+**/*.tfstate.backup
 .terraform
 .terraform/modules/alb
 **/*.crt
