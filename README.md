@@ -69,7 +69,7 @@ This project demonstrates a scalable, cloud-native architecture for running cont
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                        Internet                              │
+│                        Internet                             │
 └────────────────────────┬────────────────────────────────────┘
                          │
                          ▼
