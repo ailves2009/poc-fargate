@@ -13,3 +13,6 @@ temp/
 *-secret.yaml
 !*-sealed-secret.yaml
 inputs.tfvars
+
+# Medium articles (drafts, not part of the repo)
+MEDIUM_ARTICLE_*.md
