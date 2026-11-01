@@ -46,7 +46,7 @@ platform, or high steady utilisation.
 flowchart LR
   user([Client]) -->|HTTPS| r53[Route53<br/>poc-fargate.ailves2009.com<br/>DNS account]
   r53 --> alb[ALB<br/>TLS 1.2/1.3, ACM cert]
-  subgraph vpc[VPC]
+  subgraph vpc[VPC 10.1.0.0/16, 3 AZs, private subnets, one NAT, flow logs]
     alb -->|production rule| blue[blue-tg]
     alb -->|"test rule (X-Blue-Green: test)"| green[green-tg]
     subgraph ecs[ECS cluster ecs-integrated, Fargate + Fargate Spot]
@@ -63,6 +63,7 @@ flowchart LR
 
 | File                     | What it does                                                                                              |
 | ------------------------ | --------------------------------------------------------------------------------------------------------- |
+| `vpc.tf`                 | VPC with the same layout as the EKS POCs: 3 AZs, /20 private and /24 public subnets, one NAT, flow logs |
 | `main.tf`                | ECS cluster and both services, ALB with blue/green target groups and listener rules, Route53 record, IAM  |
 | `deploy-gates.tf`        | Blue/green gates: smoke-test Lambda hook, the role ECS uses to call it, the 5xx rollback alarm            |
 | `acm.tf`                 | ACM certificate for exactly one hostname, validated in the DNS account                                     |
@@ -74,7 +75,8 @@ flowchart LR
 | `ci/plan_facts.py`       | Deterministic facts from the plan: changes, blast radius, IAM/SG changes, cost, *security approval needed?* |
 | `ci/ai-review-prompt.md` | Prompt of the AI plan reviewer                                                                             |
 
-The VPC, subnets and the Route53 hosted zone are **inputs**: this POC deploys into an existing network.
+The POC creates its own VPC with the same layout as the EKS POCs of the series (`10.1.0.0/16`
+instead of `10.0.0.0/16`, so they can be peered later). The Route53 hosted zone is an **input**.
 
 ## How the requirements are met
 
@@ -138,6 +140,32 @@ flowchart LR
 - **Policies as code.** `policy/terraform.rego` blocks a PR on `Action "*"`, ports other than 80/443 open to the internet, a non-TLS13 listener policy, images without a digest and privileged containers. Every rule is a finding from this POC's own review, so the same mistakes cannot come back.
 - **Security approval is a deterministic decision.** `ci/plan_facts.py` requires it for changes to IAM, security groups, listeners/TLS, DNS, KMS or bucket policies; for policy findings; and for deleting or replacing stateful resources. The `security-gate` check passes only after someone from `SECURITY_REVIEWERS` (not the PR author) adds the `security-approved` label.
 - **Apply runs exactly the reviewed plan** behind a manual approval (GitHub environment `production`).
+
+### How a plan is reviewed
+
+```mermaid
+sequenceDiagram
+    participant GH as GitHub Actions
+    participant AWS as AWS (read-only role)
+    participant IC as Infracost Pricing API
+    participant PF as plan_facts.py
+    participant AI as Claude Code (no AWS access)
+    participant PR as Pull request
+    GH->>AWS: terraform plan (OIDC)
+    GH->>GH: plan.json → conftest (deny blocks) and Checkov
+    GH->>IC: resource types and price parameters only
+    IC-->>GH: monthly cost and delta
+    GH->>PF: plan + Checkov + Infracost
+    PF-->>GH: facts.json, approval_required
+    GH->>AI: artifacts, Read tool only
+    AI-->>GH: Markdown review
+    GH->>PR: one comment, updated on every push, plus a label
+    GH->>PR: security-gate (required check)
+```
+
+- **Infracost** is an open-source CLI that prices a Terraform plan before `apply`. It maps each resource (Fargate vCPU/GB-hours, ALB, NAT, Lambda, logs) to AWS list prices and reports the monthly cost and the delta of the PR. Usage-based items (traffic, log volume) need a usage file; Fargate Spot is priced as On-Demand, so the real bill is lower.
+- **`ci/plan_facts.py`** turns the plan into facts: create/update/replace/delete, blast radius (stateful losses, user-facing changes), IAM and network changes with content checks, cost, and the **security approval decision with its reasons**. It never fails the build: conftest blocks, the security gate enforces.
+- **The AI review** runs in a job without AWS credentials or write access. A separate job posts it as a single PR comment (found by a hidden marker and updated in place). If the model is unavailable, nothing blocks: the review is advisory.
 
 ## AI in this project
 
@@ -228,12 +256,11 @@ A realistic SLO for this single-region design is **99.9%** (43 min error budget 
 - **Pinned supply chain.** Images are pinned by digest (enforced by variable validation and conftest), Terraform modules by version, GitHub Actions by commit SHA.
 - **Safe deployments.** Smoke-test hook and 5xx alarm as rollback triggers.
 - **Pipeline guardrails.** OIDC, policies as code, security approval gate, manual production approval.
-- **Minimal inbound exposure.** nginx accepts traffic only from the ALB security group; the sample app has no ingress at all.
+- **Minimal network exposure.** Tasks run in private subnets without public IPs; nginx accepts traffic only from the ALB security group; the sample app has no ingress at all. VPC flow logs go to CloudWatch (30 days).
 
 Known exceptions in this POC:
 - `poc-ecs-app` (the AWS `ecsdemo-frontend` sample) writes to its root filesystem and runs as root, so it is not hardened. Replace it with your own image to apply the same settings as nginx. The pipeline reports it as a warning on every plan.
 - The FireLens log router (`aws-for-fluent-bit`) runs with the settings AWS provides.
-- On a default VPC without a NAT gateway, set `assign_public_ip = true`: tasks get public IPs to pull images. Inbound is still limited to the ALB security group. Production uses private subnets.
 
 ### ⚠️ Not done in this POC — required in production
 
@@ -245,7 +272,7 @@ These are left out on purpose to keep the POC small and cheap.
 | Log bucket (S3) | No `force_destroy`; SSE-KMS with a customer-managed key; lifecycle rules; a bucket policy denying non-TLS access; versioning / Object Lock if the logs are audit evidence |
 | Kinesis Firehose | Server-side encryption (SSE with KMS) on the delivery stream |
 | ALB | AWS WAF web ACL (AWS managed rule groups, rate limiting); access logs to S3; deletion protection |
-| Network | Private subnets only; replace `0.0.0.0/0` egress with specific destinations; VPC endpoints (ECR API/DKR, S3 gateway, CloudWatch Logs, Firehose, SSM messages) |
+| Network | One NAT per AZ (a single NAT is a single point of failure for egress); replace `0.0.0.0/0` egress with specific destinations; VPC endpoints (ECR API/DKR, S3 gateway, CloudWatch Logs, Firehose, SSM messages) |
 | ECS Exec | KMS-encrypt exec sessions; allow `ecs:ExecuteCommand` only to a break-glass role |
 | Detection | CloudTrail (organisation trail), GuardDuty with ECS Runtime Monitoring, Security Hub, AWS Config |
 | Deployments | Latency (p99) alarm next to 5xx; the AI second key in the deployment hook |
@@ -256,7 +283,6 @@ These are left out on purpose to keep the POC small and cheap.
 
 Prerequisites:
 - Terraform ≥ 1.10 and AWS CLI v2;
-- a VPC with public subnets for the ALB, and subnets for tasks (private with NAT/VPC endpoints, or public with `assign_public_ip = true`);
 - a public Route53 hosted zone, in this or in a separate DNS account;
 - an S3 bucket for the state (versioned, encrypted).
 
@@ -271,7 +297,7 @@ Copy the examples and fill in your values. `inputs.tfvars` and `backend.hcl` are
 real account IDs, VPC, subnet and hosted zone IDs never reach git:
 
 ```bash
-cp inputs.tfvars.example inputs.tfvars   # account_id, domain, zone, VPC, subnets, dns_* if needed
+cp inputs.tfvars.example inputs.tfvars   # account_id, domain, zone, dns_* if needed
 cp backend.hcl.example   backend.hcl     # state bucket and region
 
 terraform init -backend-config=backend.hcl

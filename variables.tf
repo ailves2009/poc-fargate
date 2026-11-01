@@ -33,8 +33,9 @@ variable "dns_aws_profile" {
 }
 
 variable "vpc_cidr" {
-  description = "CIDR block for the VPC (ALB egress is limited to it)"
+  description = "CIDR of the POC VPC. The EKS POCs use 10.0.0.0/16; a different range keeps peering possible"
   type        = string
+  default     = "10.1.0.0/16"
 }
 
 variable "name" {
@@ -175,21 +176,8 @@ variable "blue_green_bake_time_minutes" {
   default     = 5
 }
 
-variable "public_subnets" {
-  description = "List of Public subnet IDs for awsvpc"
-  type        = list(string)
-}
 
-variable "private_subnets" {
-  description = "Subnets for the ECS tasks. Private subnets need a NAT gateway or VPC endpoints to pull images"
-  type        = list(string)
-}
 
-variable "assign_public_ip" {
-  description = "Give tasks a public IP so they can pull images without a NAT gateway (POC on a default VPC). Inbound traffic is still limited to the ALB security group"
-  type        = bool
-  default     = false
-}
 
 variable "smoke_test_path" {
   description = "Path the blue/green lifecycle hook requests through the test listener rule before production traffic is shifted"
@@ -209,11 +197,6 @@ variable "log_retention" {
   default     = 7
 }
 
-variable "vpc_id" {
-  description = "VPC ID required for creating the target group and security groups"
-  type        = string
-  default     = ""
-}
 
 variable "service_names" {
   type    = list(string)

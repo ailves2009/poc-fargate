@@ -191,8 +191,7 @@ module "ecs" {
         }]
       }
 
-      subnet_ids       = var.private_subnets
-      assign_public_ip = var.assign_public_ip
+      subnet_ids = module.vpc.private_subnets
 
       security_group_egress_rules = {
         all = {
@@ -319,8 +318,7 @@ module "ecs" {
         }
       } : {}
 
-      subnet_ids       = var.private_subnets
-      assign_public_ip = var.assign_public_ip
+      subnet_ids = module.vpc.private_subnets
 
       security_group_ingress_rules = var.enable_alb ? {
         alb = {
@@ -360,8 +358,8 @@ module "alb" {
   name               = local.name
   load_balancer_type = "application"
   internal           = false
-  vpc_id             = var.vpc_id
-  subnets            = var.public_subnets
+  vpc_id             = module.vpc.vpc_id
+  subnets            = module.vpc.public_subnets
 
   # For poc only
   enable_deletion_protection = false

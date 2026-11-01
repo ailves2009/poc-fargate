@@ -1,9 +1,9 @@
 # Copy to inputs.tfvars (gitignored) and fill in your values:
 #   cp inputs.tfvars.example inputs.tfvars
-# The real account ID, subnet/VPC/zone IDs stay out of git.
+# The real account ID and zone ID stay out of git. The VPC is created by vpc.tf.
 
 account_id = "111122223333" # AWS documentation placeholder; allowed_account_ids pins the provider to it
-region     = "us-east-2"
+region     = "eu-west-3"
 name       = "poc-fargate"
 
 # Service FQDN = <name>.<domain_name>, e.g. poc-fargate.ailves2009.com
@@ -15,14 +15,6 @@ acm_certificate_arn    = "" # only when create_acm_certificate = false
 # Optional: the zone lives in another account (shared DNS account)
 # dns_account_id  = "444455556666"
 # dns_aws_profile = "dns-account-profile" # local runs; CI uses its own role
-
-vpc_id          = "vpc-xxxxxxxxxxxxxxxxx"
-vpc_cidr        = "10.0.0.0/16"
-public_subnets  = ["subnet-xxxxxxxxxxxxxxxxx", "subnet-xxxxxxxxxxxxxxxxx"]
-private_subnets = ["subnet-xxxxxxxxxxxxxxxxx", "subnet-xxxxxxxxxxxxxxxxx"]
-# Default VPC without NAT: put tasks in public subnets with a public IP.
-# Inbound traffic is still limited to the ALB security group.
-assign_public_ip = false
 
 # Images are pinned by digest (enforced by variable validation).
 # Re-resolve a digest: crane digest <image>:<tag>  (or docker buildx imagetools inspect)

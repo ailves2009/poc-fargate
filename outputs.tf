@@ -1,13 +1,13 @@
 # poc-fargate/outputs.tf
 
 output "vpc_id" {
-  description = "VPC id used for ALB/target group"
-  value       = var.vpc_id
+  description = "POC VPC"
+  value       = module.vpc.vpc_id
 }
 
-output "subnets" {
-  description = "Subnets used by the ECS service / ALB"
-  value       = var.private_subnets
+output "private_subnets" {
+  description = "Subnets of the ECS tasks"
+  value       = module.vpc.private_subnets
 }
 
 output "alb_dns_name" {
