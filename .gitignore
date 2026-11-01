@@ -19,3 +19,8 @@ MEDIUM_ARTICLE_*.md
 
 # Local-only backend settings and private notes
 backend.hcl
+
+# Local terraform plans and terminal logs (contain account IDs)
+tfplan
+*.tfplan
+deploy-commands.md
