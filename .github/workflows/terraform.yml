@@ -1,0 +1,251 @@
+# Golden pipeline for poc-fargate.
+#
+# PR:   static checks -> plan -> policies (conftest, Checkov) -> cost (Infracost)
+#       -> AI plan review (comment only) -> security approval gate
+# main: plan again -> manual approval (environment "production") -> apply
+#
+# Principle: deterministic tools decide, the model explains. The AI job has no
+# cloud credentials and no write token; a separate step posts its output.
+#
+# Repository settings this workflow expects:
+#   secrets: TFVARS (inputs.tfvars content), BACKEND_HCL, ANTHROPIC_API_KEY,
+#            INFRACOST_API_KEY
+#   vars:    AWS_REGION, AWS_PLAN_ROLE_ARN (read-only), AWS_APPLY_ROLE_ARN,
+#            AWS_DNS_ROLE_ARN (role in the DNS account),
+#            SECURITY_REVIEWERS (comma-separated GitHub logins)
+#   environment "production" with required reviewers
+
+name: terraform
+
+on:
+  pull_request:
+    branches: [master]
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: terraform-${{ github.ref }}
+  cancel-in-progress: false # never interrupt an apply
+
+env:
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+
+jobs:
+  static:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
+        with:
+          terraform_version: "~1.14"
+      - run: terraform fmt -check -recursive
+      - run: terraform init -backend=false
+      - run: terraform validate
+      - uses: terraform-linters/setup-tflint@90f302c255ef959cbfb4bd10581afecdb7ece3e6 # v4
+      - run: tflint --init && tflint --format compact
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+  plan:
+    needs: static
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # OIDC to AWS, no long-lived keys
+    outputs:
+      approval_required: ${{ steps.facts.outputs.approval_required }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
+        with:
+          terraform_version: "~1.14"
+          terraform_wrapper: false
+      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
+        with:
+          role-to-assume: ${{ github.event_name == 'push' && vars.AWS_APPLY_ROLE_ARN || vars.AWS_PLAN_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Inputs and DNS profile
+        env:
+          TFVARS: ${{ secrets.TFVARS }}
+          BACKEND_HCL: ${{ secrets.BACKEND_HCL }}
+        run: |
+          printf '%s\n' "$TFVARS" > inputs.tfvars
+          printf '%s\n' "$BACKEND_HCL" > backend.hcl
+          # The aws.dns provider assumes a role in the DNS account from the
+          # OIDC session (CI never uses the local dns_aws_profile).
+          mkdir -p ~/.aws
+          printf '[profile dns]\nrole_arn = %s\ncredential_source = Environment\n' \
+            "${{ vars.AWS_DNS_ROLE_ARN }}" > ~/.aws/config
+
+      - run: terraform init -backend-config=backend.hcl
+      - run: terraform plan -var-file=inputs.tfvars -var dns_aws_profile=dns -out=tfplan
+      - run: terraform show -json tfplan > plan.json
+
+      - name: Policies (conftest)
+        run: |
+          set -o pipefail # a deny must fail the job despite tee
+          curl -sSL https://github.com/open-policy-agent/conftest/releases/download/v0.71.1/conftest_0.71.1_Linux_x86_64.tar.gz \
+            | tar xz conftest
+          ./conftest test plan.json --policy policy --no-color | tee conftest.txt
+
+      - name: Checkov on the plan
+        run: |
+          pip install --quiet checkov==3.4.0
+          checkov -f plan.json --framework terraform_plan --soft-fail -o json > checkov.json || true
+
+      - uses: infracost/actions/setup@e9d6e6cd65e168e76b0de50ff9957d2fe8bb1832 # v3
+        with:
+          api-key: ${{ secrets.INFRACOST_API_KEY }}
+      - run: infracost breakdown --path plan.json --format json --out-file infracost.json
+
+      - name: Facts
+        id: facts
+        run: |
+          python3 ci/plan_facts.py plan.json checkov.json infracost.json > facts.json
+          echo "approval_required=$(jq -r .security.approval_required facts.json)" >> "$GITHUB_OUTPUT"
+          jq . facts.json >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: plan-review
+          path: |
+            plan.json
+            facts.json
+            conftest.txt
+            checkov.json
+            infracost.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: github.event_name == 'push'
+        with:
+          name: tfplan
+          path: tfplan
+
+  # Claude Code reads the plan artifacts and writes a review. No AWS access,
+  # no repository write access, no shell: Read is the only tool it gets.
+  ai-review:
+    if: github.event_name == 'pull_request'
+    needs: plan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          sparse-checkout: ci
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: plan-review
+          path: review
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+      - name: Claude Code plan review
+        working-directory: review
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          npx --yes @anthropic-ai/claude-code@2.1.316 -p "$(cat ../ci/ai-review-prompt.md)" \
+            --model claude-sonnet-5-5 \
+            --allowedTools "Read" \
+            --disallowedTools "Bash" "Edit" "Write" "WebFetch" "WebSearch" \
+            --max-turns 10 \
+            --output-format text > ai-review.md
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ai-review
+          path: review/ai-review.md
+
+  comment:
+    if: github.event_name == 'pull_request'
+    needs: [plan, ai-review]
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: ai-review
+      - uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        with:
+          script: |
+            const fs = require('fs');
+            const marker = '<!-- ai-plan-review -->';
+            const body = `${marker}\n## AI plan review\n\n${fs.readFileSync('ai-review.md', 'utf8')}\n\n` +
+              `_Generated by Claude Code from the plan artifacts. Advisory only: policies, ` +
+              `the security gate and the production approval decide._`;
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number });
+            const prev = comments.find(c => c.body.startsWith(marker));
+            if (prev) await github.rest.issues.updateComment({ owner, repo, comment_id: prev.id, body });
+            else await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            const needs = '${{ needs.plan.outputs.approval_required }}' === 'true';
+            if (needs) await github.rest.issues.addLabels({ owner, repo, issue_number, labels: ['security-review-required'] });
+
+  # Required status check. Passes when no approval is needed, or when the
+  # "security-approved" label was added by someone in SECURITY_REVIEWERS
+  # (the PR author cannot approve their own change).
+  security-gate:
+    if: github.event_name == 'pull_request'
+    needs: plan
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+      issues: read
+    steps:
+      - uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        env:
+          REQUIRED: ${{ needs.plan.outputs.approval_required }}
+          REVIEWERS: ${{ vars.SECURITY_REVIEWERS }}
+        with:
+          script: |
+            if (process.env.REQUIRED !== 'true') return core.info('No security-relevant changes.');
+            const reviewers = (process.env.REVIEWERS || '').split(',').map(s => s.trim()).filter(Boolean);
+            const { owner, repo } = context.repo;
+            const author = context.payload.pull_request.user.login;
+            const events = await github.paginate(github.rest.issues.listEvents,
+              { owner, repo, issue_number: context.issue.number });
+            const ok = events.some(e => e.event === 'labeled' && e.label?.name === 'security-approved'
+              && reviewers.includes(e.actor.login) && e.actor.login !== author);
+            if (!ok) core.setFailed('Security approval required: a member of SECURITY_REVIEWERS ' +
+              '(not the author) must add the "security-approved" label. See the AI plan review for the reasons.');
+
+  apply:
+    if: github.event_name == 'push'
+    needs: plan
+    runs-on: ubuntu-latest
+    environment: production # manual approval in GitHub
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
+        with:
+          terraform_version: "~1.14"
+      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
+        with:
+          role-to-assume: ${{ vars.AWS_APPLY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - name: Inputs and DNS profile
+        env:
+          TFVARS: ${{ secrets.TFVARS }}
+          BACKEND_HCL: ${{ secrets.BACKEND_HCL }}
+        run: |
+          printf '%s\n' "$TFVARS" > inputs.tfvars
+          printf '%s\n' "$BACKEND_HCL" > backend.hcl
+          mkdir -p ~/.aws
+          printf '[profile dns]\nrole_arn = %s\ncredential_source = Environment\n' \
+            "${{ vars.AWS_DNS_ROLE_ARN }}" > ~/.aws/config
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: tfplan
+      - run: terraform init -backend-config=backend.hcl
+      # Applies exactly the plan that was reviewed; a stale plan fails here.
+      - run: terraform apply tfplan
