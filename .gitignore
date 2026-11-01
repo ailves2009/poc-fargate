@@ -16,3 +16,6 @@ inputs.tfvars
 
 # Medium articles (drafts, not part of the repo)
 MEDIUM_ARTICLE_*.md
+
+# Local-only backend settings and private notes
+backend.hcl

@@ -1,0 +1,6 @@
+# Copy to backend.hcl (gitignored) and run:
+#   terraform init -backend-config=backend.hcl
+# The bucket is created once, outside this configuration (chicken-and-egg):
+# versioning, SSE-KMS, Block Public Access, TLS-only bucket policy.
+bucket = "poc-fargate-tfstate-111122223333"
+region = "us-east-2"

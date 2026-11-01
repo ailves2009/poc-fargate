@@ -191,7 +191,8 @@ module "ecs" {
         }]
       }
 
-      subnet_ids = var.private_subnets
+      subnet_ids       = var.private_subnets
+      assign_public_ip = var.assign_public_ip
 
       security_group_egress_rules = {
         all = {
@@ -215,9 +216,24 @@ module "ecs" {
       autoscaling_max_capacity = var.autoscaling_max_capacity
       autoscaling_policies     = local.autoscaling_policies
 
+      # Deterministic gates, in order: the smoke-test hook on test traffic,
+      # then the 5xx alarm during the bake time. Either one rolls back.
       deployment_configuration = var.enable_alb ? {
         strategy             = "BLUE_GREEN"
         bake_time_in_minutes = tostring(var.blue_green_bake_time_minutes)
+        lifecycle_hook = {
+          smoke_test = {
+            hook_target_arn  = aws_lambda_function.smoke_test[0].arn
+            role_arn         = aws_iam_role.deploy_hook[0].arn
+            lifecycle_stages = ["POST_TEST_TRAFFIC_SHIFT"]
+          }
+        }
+      } : null
+
+      alarms = var.enable_alb ? {
+        alarm_names = [aws_cloudwatch_metric_alarm.target_5xx[0].alarm_name]
+        enable      = true
+        rollback    = true
       } : null
 
       deployment_circuit_breaker = {
@@ -303,7 +319,8 @@ module "ecs" {
         }
       } : {}
 
-      subnet_ids = var.private_subnets
+      subnet_ids       = var.private_subnets
+      assign_public_ip = var.assign_public_ip
 
       security_group_ingress_rules = var.enable_alb ? {
         alb = {
@@ -501,10 +518,11 @@ resource "aws_lb_listener_rule" "test" {
 }
 
 resource "aws_route53_record" "alb_alias" {
-  count   = var.enable_alb ? 1 : 0
-  zone_id = var.hosted_zone_id
-  name    = "${local.name}.${var.domain_name}" # poc-fargate.ailves2009.com
-  type    = "A"
+  provider = aws.dns
+  count    = var.enable_alb ? 1 : 0
+  zone_id  = var.hosted_zone_id
+  name     = local.fqdn
+  type     = "A"
   alias {
     name                   = module.alb[0].dns_name
     zone_id                = module.alb[0].zone_id

@@ -15,8 +15,25 @@ variable "account_id" {
   }
 }
 
+variable "dns_account_id" {
+  description = "Account that owns hosted_zone_id, if different from account_id (DNS in a shared account)"
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.dns_account_id == null || can(regex("^[0-9]{12}$", var.dns_account_id))
+    error_message = "dns_account_id must be a 12-digit AWS account ID."
+  }
+}
+
+variable "dns_aws_profile" {
+  description = "AWS CLI profile for the DNS account (local runs only; null = default credential chain)"
+  type        = string
+  default     = null
+}
+
 variable "vpc_cidr" {
-  description = "CIDR block for the VPC"
+  description = "CIDR block for the VPC (ALB egress is limited to it)"
   type        = string
 }
 
@@ -164,8 +181,26 @@ variable "public_subnets" {
 }
 
 variable "private_subnets" {
-  description = "List of Private subnet IDs for awsvpc"
+  description = "Subnets for the ECS tasks. Private subnets need a NAT gateway or VPC endpoints to pull images"
   type        = list(string)
+}
+
+variable "assign_public_ip" {
+  description = "Give tasks a public IP so they can pull images without a NAT gateway (POC on a default VPC). Inbound traffic is still limited to the ALB security group"
+  type        = bool
+  default     = false
+}
+
+variable "smoke_test_path" {
+  description = "Path the blue/green lifecycle hook requests through the test listener rule before production traffic is shifted"
+  type        = string
+  default     = "/"
+}
+
+variable "alarm_5xx_threshold" {
+  description = "Target 5xx responses per minute that trip the deployment alarm and roll back a blue/green deployment"
+  type        = number
+  default     = 5
 }
 
 variable "log_retention" {
