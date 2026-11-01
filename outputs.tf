@@ -20,9 +20,9 @@ output "alb_zone_id" {
   value       = var.enable_alb ? module.alb[0].zone_id : ""
 }
 
-output "sg_ecs_id" {
-  description = "ECS tasks security group id"
-  value       = try(aws_security_group.sg_ecs.id, "")
+output "alb_full_dns_name" {
+  description = "Route53 record FQDN for the service"
+  value       = var.enable_alb ? aws_route53_record.alb_alias[0].fqdn : ""
 }
 
 output "sg_alb_id" {
@@ -33,11 +33,12 @@ output "sg_alb_id" {
 output "module_alb_security_group_id" {
   value = var.enable_alb ? module.alb[0].security_group_id : ""
 }
-output "module_alb_target_groups_poc_ecs_arn" {
-  value = var.enable_alb ? module.alb[0].target_groups["green-tg"].arn : ""
-}
-output "module_alb_target_groups_poc_ecs_name" {
-  value = var.enable_alb ? module.alb[0].target_groups["green-tg"].name : ""
+output "target_group_arns" {
+  description = "Blue/green target groups of the nginx service (ECS swaps their roles after each deployment)"
+  value = var.enable_alb ? {
+    blue  = module.alb[0].target_groups["blue-tg"].arn
+    green = module.alb[0].target_groups["green-tg"].arn
+  } : null
 }
 
 output "infrastructure_iam_role_name" {
@@ -63,4 +64,9 @@ output "services" {
 output "acm_certificate_arn" {
   description = "ARN of the ACM certificate for HTTPS"
   value       = local.certificate_arn
+}
+
+output "blue_green_test_command" {
+  description = "Reach the new revision through the test listener rule during a blue/green deployment"
+  value       = var.enable_alb ? "curl -H 'X-Blue-Green: test' https://${aws_route53_record.alb_alias[0].fqdn}/" : ""
 }

@@ -29,14 +29,10 @@ resource "aws_iam_policy" "firehose_policy" {
         Resource = [aws_s3_bucket.firehose.arn, "${aws_s3_bucket.firehose.arn}/*"]
       },
       {
+        # Delivery-error logging; the group and stream are created by Terraform
         Effect   = "Allow"
-        Action   = ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"]
-        Resource = "arn:aws:logs:*:*:log-group:/aws/kinesisfirehose/poc-fargate*"
-      },
-      {
-        Effect   = "Allow"
-        Action   = ["s3:GetObject"]
-        Resource = "${aws_s3_bucket.firehose.arn}/fluent-bit-config/*"
+        Action   = ["logs:PutLogEvents"]
+        Resource = "${aws_cloudwatch_log_group.firehose.arn}:*"
       }
     ]
   })

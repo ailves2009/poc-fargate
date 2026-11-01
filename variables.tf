@@ -5,6 +5,16 @@ variable "region" {
   type        = string
 }
 
+variable "account_id" {
+  description = "AWS account ID the provider is pinned to (allowed_account_ids). Set it only in the gitignored inputs.tfvars"
+  type        = string
+
+  validation {
+    condition     = can(regex("^[0-9]{12}$", var.account_id))
+    error_message = "account_id must be a 12-digit AWS account ID."
+  }
+}
+
 variable "vpc_cidr" {
   description = "CIDR block for the VPC"
   type        = string
@@ -54,23 +64,33 @@ variable "app_container_port" {
 }
 
 variable "fluent_bit_image" {
-  description = "Docker image for Fluent Bit sidecar container"
+  description = "Docker image for Fluent Bit sidecar container, pinned by digest (<repo>@sha256:<64 hex>)"
   type        = string
+
+  validation {
+    condition     = can(regex("@sha256:[0-9a-f]{64}$", var.fluent_bit_image))
+    error_message = "Pin the image by digest: <repo>@sha256:<digest>. Mutable tags such as :latest or :stable are not allowed."
+  }
 }
 
 variable "poc_app_image" {
-  description = "Docker image for POC app ECS task"
+  description = "Docker image for POC app ECS task, pinned by digest (<repo>@sha256:<64 hex>)"
   type        = string
+
+  validation {
+    condition     = can(regex("@sha256:[0-9a-f]{64}$", var.poc_app_image))
+    error_message = "Pin the image by digest: <repo>@sha256:<digest>. Mutable tags such as :latest or :stable are not allowed."
+  }
 }
 
 variable "nginx_image" {
-  description = "Docker image for app ECS task"
+  description = "Unprivileged nginx image (UID 101, listens on 8080), pinned by digest (<repo>@sha256:<64 hex>)"
   type        = string
-}
 
-variable "external_port" {
-  description = "External port for accessing the service (through ALB)"
-  type        = number
+  validation {
+    condition     = can(regex("@sha256:[0-9a-f]{64}$", var.nginx_image))
+    error_message = "Pin the image by digest: <repo>@sha256:<digest>. Mutable tags such as :latest or :stable are not allowed."
+  }
 }
 
 variable "poc_app_cpu" {
@@ -88,7 +108,7 @@ variable "service_cpu" {
 variable "fluent_bit_cpu" {
   description = "CPU units for Fluent Bit sidecar container (as string)"
   type        = string
-  default     = "512"
+  default     = "128"
 }
 
 variable "nginx_cpu" {
@@ -111,7 +131,7 @@ variable "poc_app_memory" {
 variable "fluent_bit_memory" {
   description = "Memory (MB) for Fluent Bit sidecar container (as string)"
   type        = string
-  default     = "1024"
+  default     = "256"
 }
 
 variable "nginx_memory" {
@@ -121,8 +141,21 @@ variable "nginx_memory" {
 }
 
 variable "desired_count" {
-  type    = number
-  default = 1
+  description = "Initial task count per service; also the autoscaling minimum"
+  type        = number
+  default     = 2
+}
+
+variable "autoscaling_max_capacity" {
+  description = "Maximum task count per service for target-tracking autoscaling"
+  type        = number
+  default     = 10
+}
+
+variable "blue_green_bake_time_minutes" {
+  description = "How long ECS keeps the previous (blue) tasks after shifting production traffic, for instant rollback"
+  type        = number
+  default     = 5
 }
 
 variable "public_subnets" {
@@ -135,36 +168,6 @@ variable "private_subnets" {
   type        = list(string)
 }
 
-variable "sg_description" {
-  description = "Description of the security group"
-  type        = string
-  default     = "Security group for ECS Fargate tasks"
-}
-
-variable "sg_ssh_port" {
-  description = "Port for SSH access"
-  type        = number
-  default     = 22
-}
-
-variable "ssh_cidr_blocks" {
-  description = "CIDR blocks allowed for SSH access"
-  type        = list(string)
-  default     = ["0.0.0.0/0"]
-}
-
-variable "environment" {
-  description = "Map of environment variables for the container"
-  type        = map(string)
-  default     = {}
-}
-
-variable "log_group_name" {
-  description = "Optional name of the log group"
-  type        = string
-  default     = ""
-}
-
 variable "log_retention" {
   description = "Retention for CloudWatch logs (days)"
   type        = number
@@ -173,34 +176,6 @@ variable "log_retention" {
 
 variable "vpc_id" {
   description = "VPC ID required for creating the target group and security groups"
-  type        = string
-  default     = ""
-}
-
-variable "health_check_path" {
-  description = "Path for the health check of the target group"
-  type        = string
-  default     = "/health"
-}
-
-variable "deployment_minimum_healthy_percent" {
-  type    = number
-  default = 50
-}
-
-variable "deployment_maximum_percent" {
-  type    = number
-  default = 200
-}
-
-variable "route_table_ids" {
-  description = "Optional list of route table IDs for S3 gateway endpoint (provide to create S3 endpoint)."
-  type        = list(string)
-  default     = []
-}
-
-variable "certificate_arn" {
-  description = "Optional certificate ARN for HTTPS listener. If empty, HTTPS listener won't be created."
   type        = string
   default     = ""
 }

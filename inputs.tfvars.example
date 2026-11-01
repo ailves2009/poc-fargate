@@ -1,0 +1,39 @@
+# Copy to inputs.tfvars (gitignored) and fill in your values:
+#   cp inputs.tfvars.example inputs.tfvars
+# The real account ID, subnet/VPC/zone IDs stay out of git.
+
+account_id = "111122223333" # AWS documentation placeholder; allowed_account_ids pins the provider to it
+region     = "us-east-2"
+name       = "poc-fargate"
+
+# Service FQDN = <name>.<domain_name>, e.g. poc-fargate.ailves2009.com
+domain_name            = "ailves2009.com"
+hosted_zone_id         = "Z0000000000000000000"
+create_acm_certificate = true
+acm_certificate_arn    = "" # only when create_acm_certificate = false
+
+vpc_id          = "vpc-xxxxxxxxxxxxxxxxx"
+vpc_cidr        = "10.0.0.0/16"
+public_subnets  = ["subnet-xxxxxxxxxxxxxxxxx", "subnet-xxxxxxxxxxxxxxxxx"]
+private_subnets = ["subnet-xxxxxxxxxxxxxxxxx", "subnet-xxxxxxxxxxxxxxxxx"]
+
+# Images are pinned by digest (enforced by variable validation).
+# Re-resolve a digest: crane digest <image>:<tag>  (or docker buildx imagetools inspect)
+fluent_bit_image = "public.ecr.aws/aws-observability/aws-for-fluent-bit@sha256:d9bac9d6a1b41d4bad2b0ff6cea894783046981c5c7e82cd89923e900a56a2cc" # :stable
+poc_app_image    = "public.ecr.aws/aws-containers/ecsdemo-frontend@sha256:4e4f7fc8e4b36c555295ad31a7d9f20259630af0a2709d66102ef452e7390c6e"      # :776fd50
+nginx_image      = "public.ecr.aws/nginx/nginx-unprivileged@sha256:0c79d56aee561a1d81c63f00eee5fb5fe29279560cdc55e91425133104c7fbe6"             # :1.29-alpine
+
+poc_container_port = 3000
+app_container_port = 8080 # nginx-unprivileged listens on 8080
+
+service_cpu       = "1024"
+service_memory    = "4096"
+poc_app_cpu       = "256"
+poc_app_memory    = "512"
+nginx_cpu         = "512"
+nginx_memory      = "1024"
+fluent_bit_cpu    = "128"
+fluent_bit_memory = "256"
+desired_count     = 2
+log_retention     = 7
+enable_alb        = true
